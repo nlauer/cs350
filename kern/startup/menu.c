@@ -396,6 +396,20 @@ cmd_kheapstats(int nargs, char **args)
 	return 0;
 }
 
+/*
+ * Command for debugging threads.
+ */
+static
+int
+cmd_debug_threads(int nargs, char **args)
+{
+    (void)nargs;
+    (void)args;
+
+    dbflags = DB_THREADS;
+    return 0;
+}
+
 ////////////////////////////////////////
 //
 // Menus.
@@ -505,6 +519,7 @@ static const char *mainmenu[] = {
 #endif
 	"[kh] Kernel heap stats              ",
 	"[q] Quit and shut down              ",
+	"[dth] Debug Threads                 ",
 	NULL
 };
 
@@ -548,6 +563,7 @@ static struct {
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
+	{ "dth",		cmd_debug_threads },
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
