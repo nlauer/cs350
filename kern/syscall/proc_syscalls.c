@@ -16,7 +16,6 @@
 /* this needs to be fixed to get exit() and waitpid() working properly */
 
 void sys__exit(int exitcode) {
-    
     struct addrspace *as;
     struct proc *p = curproc;
     /* for now, just include this to keep the compiler from complaining about
@@ -102,7 +101,7 @@ fork_entrypoint(void *childTrapFrame,
     struct trapframe stackTrapFrame;
     stackTrapFrame = *heapTrapFrame; // copy the childTrapFrame onto the current process's stack
     stackTrapFrame.tf_v0 = 0; // The child should return 0 from the fork call, so set its return value
-    stackTrapFrame.tf_epc += 4;
+    stackTrapFrame.tf_epc += 4; // Move the pc forward so we aren't stuck in the same spot always
     stackTrapFrame.tf_a3 = 0;
     kfree(childTrapFrame);
     mips_usermode(&stackTrapFrame);
@@ -114,12 +113,9 @@ int
 sys_fork(struct trapframe *parentTrapFrame,
          pid_t *retval)
 {
-//    (void)parentTrapFrame;
-//    (void)retval;
     DEBUG(DB_SYSCALL, "FORKING");
     struct proc *parent = curproc;
     struct proc *child = proc_create_runprogram("a");
-    child->pid = 3;
     if (child == NULL) {
         //TODO: more stuff here, fix error code returned
         return(-1);
@@ -130,7 +126,7 @@ sys_fork(struct trapframe *parentTrapFrame,
     KASSERT(childTrapFrame != NULL);
     *childTrapFrame = *parentTrapFrame;
     
-    //TODO: more stuff here, fix error code returned, sychronization, not in right places
+    // Copy the parent's address space to child
     KASSERT(parent->p_addrspace != NULL); /* Parent should have an addrspace */
     KASSERT(child->p_addrspace == NULL); /* Child should not have an addrspace */
     int asCopyReturn = as_copy(parent->p_addrspace, &child->p_addrspace);

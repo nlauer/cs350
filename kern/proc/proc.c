@@ -50,6 +50,9 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
+#include "opt-A2.h"
+#include <limits.h>
+#include <synch.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -69,7 +72,10 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
-
+#if OPT_A2
+pid_t currentPid = PID_MIN;
+struct lock *pidLock;
+#endif
 
 /*
  * Create a proc structure.
@@ -207,7 +213,14 @@ proc_bootstrap(void)
   if (no_proc_sem == NULL) {
     panic("could not create no_proc_sem semaphore\n");
   }
-#endif // UW 
+#endif // UW
+    
+#if OPT_A2
+    pidLock = lock_create("pid lock");
+    if (pidLock == NULL) {
+        panic("could not create pid lock\n");
+    }
+#endif
 }
 
 /*
@@ -270,6 +283,14 @@ proc_create_runprogram(const char *name)
 	proc_count++;
 	V(proc_count_mutex);
 #endif // UW
+    
+#if OPT_A2
+    lock_acquire(pidLock);
+    // set the pid for the starting process
+    proc->pid = currentPid;
+    currentPid++;
+    lock_release(pidLock);
+#endif
 
 	return proc;
 }
