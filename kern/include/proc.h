@@ -41,6 +41,7 @@
 #include "opt-A2.h"
 #include <array.h>
 #include <types.h>
+#include <synch.h>
 
 struct addrspace;
 struct vnode;
@@ -75,7 +76,10 @@ struct proc {
     
 #if OPT_A2
     pid_t pid;
-//    struct array *children; /* Children of the Process */
+    struct array *childrenPids; /* PIDs of the children */
+    struct array *childrenProcesses; /* Children Processes */
+    struct lock *exitLock;
+    struct cv *exitCv;
 #endif
 };
 
@@ -101,6 +105,23 @@ int proc_addthread(struct proc *proc, struct thread *t);
 
 /* Detach a thread from its process. */
 void proc_remthread(struct thread *t);
+
+#if OPT_A2
+/* A child has exited. */
+void proc_child_exited(struct proc *proc, pid_t childPid, int exitcode);
+
+/* Get the exit code of an exited child process. */
+int proc_has_child_exited(struct proc *proc, pid_t childPid);
+
+/* Get the exit code of an exited child process. */
+int proc_child_exit_code(struct proc *proc, pid_t childPid);
+
+/* Return whether or not childPid is a child process of proc. */
+int proc_is_child(struct proc *proc, pid_t childPid);
+
+/* Return whether or not pid is process of proc. */
+int proc_exists(struct proc *proc, pid_t pid);
+#endif // OPT_A2
 
 /* Fetch the address space of the current process. */
 struct addrspace *curproc_getas(void);

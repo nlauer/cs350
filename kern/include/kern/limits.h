@@ -27,6 +27,8 @@
  * SUCH DAMAGE.
  */
 
+//#include "opt-A2.h"
+
 #ifndef _KERN_LIMITS_H_
 #define _KERN_LIMITS_H_
 
@@ -65,8 +67,13 @@
 /* Min value for a process ID (that can be assigned to a user process) */
 #define __PID_MIN       2
 
+//#if OPT_A2
 /* Max value for a process ID */
-#define __PID_MAX       32767
+#define __PID_MAX       4096
+//#else
+/* Max value for a process ID */
+//#define __PID_MAX       32767
+//#endif
 
 /* Max bytes for atomic pipe I/O -- see description in the pipe() man page */
 #define __PIPE_BUF      512

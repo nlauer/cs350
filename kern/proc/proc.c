@@ -53,6 +53,7 @@
 #include "opt-A2.h"
 #include <limits.h>
 #include <synch.h>
+#include <array.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -74,7 +75,11 @@ struct semaphore *no_proc_sem;
 
 #if OPT_A2
 pid_t currentPid = PID_MIN;
-struct lock *pidLock;
+static int usedPids[PID_MAX] = {0};
+static int hasPidExited[PID_MAX] = {0};
+static int exitCodes[PID_MAX] = {0};
+//struct array *usedPids;
+//struct array *exitCodes;
 #endif
 
 /*
@@ -108,6 +113,13 @@ proc_create(const char *name)
 #ifdef UW
 	proc->console = NULL;
 #endif // UW
+    
+#if OPT_A2
+    proc->childrenPids = array_create();
+    proc->childrenProcesses = array_create();
+    proc->exitLock = lock_create(name);
+    proc->exitCv = cv_create(name);
+#endif
 
 	return proc;
 }
@@ -216,10 +228,13 @@ proc_bootstrap(void)
 #endif // UW
     
 #if OPT_A2
-    pidLock = lock_create("pid lock");
-    if (pidLock == NULL) {
-        panic("could not create pid lock\n");
-    }
+//    usedPids = array_create();
+//    KASSERT(usedPids != NULL);
+//    array_setsize(usedPids, PID_MAX);
+//    
+//    exitCodes = array_create();
+//    KASSERT(exitCodes != NULL);
+//    array_setsize(exitCodes, PID_MAX);
 #endif
 }
 
@@ -285,11 +300,15 @@ proc_create_runprogram(const char *name)
 #endif // UW
     
 #if OPT_A2
-    lock_acquire(pidLock);
-    // set the pid for the starting process
+    // set the pid for the user process
+    spinlock_acquire(&curproc->p_lock);
     proc->pid = currentPid;
+    usedPids[currentPid] = 1;
     currentPid++;
-    lock_release(pidLock);
+    if (currentPid > PID_MAX) {
+        panic("Failed to create proc because no more available pids");
+    }
+    spinlock_release(&curproc->p_lock);
 #endif
 
 	return proc;
@@ -385,3 +404,62 @@ curproc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+#if OPT_A2
+/* A child has exited. */
+void proc_child_exited(struct proc *proc, pid_t childPid, int exitcode)
+{
+    (void)proc;
+    spinlock_acquire(&curproc->p_lock);
+    hasPidExited[childPid] = 1;
+    DEBUG(DB_PROC, "exited for pid: %u value: %u\n", childPid, hasPidExited[childPid]);
+    exitCodes[childPid] = exitcode;
+    spinlock_release(&curproc->p_lock);
+}
+
+/* Get the exit code of an exited child process. */
+int proc_has_child_exited(struct proc *proc, pid_t childPid)
+{
+    (void)proc;
+    
+    int hasExited = hasPidExited[childPid];
+    DEBUG(DB_PROC, "has exited for pid: %u value: %u\n", childPid, hasExited);
+    
+    return(hasExited);
+}
+
+/* Get the exit code of an exited child process. */
+int proc_child_exit_code(struct proc *proc, pid_t childPid)
+{
+    (void)proc;
+    int exitCode = exitCodes[childPid];
+    return(exitCode);
+}
+
+/* Return whether or not childPid is a child process of proc. */
+int proc_is_child(struct proc *proc, pid_t childPid)
+{
+    spinlock_acquire(&curproc->p_lock);
+    struct array *children = proc->childrenPids;
+    for (unsigned i = 0; i < array_num(children); i++) {
+        int *pid = array_get(children, i);
+        if ((*pid) == childPid) {
+            spinlock_release(&curproc->p_lock);
+            return(1);
+        }
+    }
+    spinlock_release(&curproc->p_lock);
+    return(0);
+}
+
+int proc_exists(struct proc *proc, pid_t pid)
+{
+    (void)proc;
+    
+    spinlock_acquire(&curproc->p_lock);
+    int exists = usedPids[pid];
+    spinlock_release(&curproc->p_lock);
+    
+    return(exists);
+}
+#endif

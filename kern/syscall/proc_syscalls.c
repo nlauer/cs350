@@ -22,7 +22,13 @@ void sys__exit(int exitcode) {
      an unused variable */
     (void)exitcode;
     
-    DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
+    DEBUG(DB_PROC,"Syscall: _exit(%d)\n",exitcode);
+    
+    proc_child_exited(p, p->pid, exitcode);
+    lock_acquire(p->exitLock);
+    cv_broadcast(p->exitCv, p->exitLock);
+    DEBUG(DB_PROC, "We broadcasted the cv\n");
+    lock_release(p->exitLock);
     
     KASSERT(curproc->p_addrspace != NULL);
     as_deactivate();
@@ -42,6 +48,7 @@ void sys__exit(int exitcode) {
     
     /* if this is the last user process in the system, proc_destroy()
      will wake up the kernel menu thread */
+    DEBUG(DB_PROC, "Exiting: %u\n", p->pid);
     proc_destroy(p);
     
     thread_exit();
@@ -77,15 +84,67 @@ sys_waitpid(pid_t pid,
     int result;
     
     if (options != 0) {
-        return(EINVAL);
+        DEBUG(DB_PROC, "EINVAL\n");
+        return(EINVAL); // We don't support options, return EINVAL
     }
+    
+#if OPT_A2
+    if (!proc_exists(curproc, pid)) { // check with the PID list if the proc exists, if not then return ESRCH
+        DEBUG(DB_PROC, "ESRCH\n");
+        return (ESRCH);
+    }
+    
+    if (!proc_is_child(curproc, pid)) { // the parent is not interested in the child, return ECHILD
+        DEBUG(DB_PROC, "ECHILD\n");
+        return (ECHILD);
+    }
+    
+    spinlock_acquire(&curproc->p_lock);
+    if (proc_has_child_exited(curproc, pid) == 1) { // the child process already exited, and we are holding its exitcode
+        DEBUG(DB_PROC, "has exited already\n");
+        exitstatus = proc_child_exit_code(curproc, pid);
+        spinlock_release(&curproc->p_lock);
+    }  else { // the process has not yet exited, we should wait for it to exit to get its status code
+        DEBUG(DB_PROC, "%u has not exited, must wait\n", pid);
+        
+        struct proc *childProc = NULL;
+        for (unsigned i = 0; i < array_num(curproc->childrenProcesses); i++) {
+            DEBUG(DB_PROC, "Looking for the child\n");
+            struct proc *child = array_get(curproc->childrenProcesses, i);
+            if (child->pid == pid) {
+                childProc = child;
+                DEBUG(DB_PROC, "We found the child\n");
+                break;
+            }
+        }
+        spinlock_release(&curproc->p_lock);
+        
+        KASSERT(childProc != NULL);
+        KASSERT(childProc->exitLock != NULL);
+        KASSERT(childProc->exitCv != NULL);
+        
+        struct lock *childProcLock = childProc->exitLock;
+       
+        lock_acquire(childProcLock);
+        DEBUG(DB_PROC, "We acquired the lock\n");
+        while(proc_has_child_exited(curproc, pid) != 1) {
+            cv_wait(childProc->exitCv, childProcLock);
+            DEBUG(DB_PROC, "We have awaken from the cv\n");
+        }
+        exitstatus = proc_child_exit_code(curproc, pid);
+        lock_release(childProcLock);
+        DEBUG(DB_PROC, "We released the lock\n");
+    }
+    
+    exitstatus = _MKWAIT_EXIT(exitstatus);
+#else
     /* for now, just pretend the exitstatus is 0 */
     exitstatus = 0;
-    
+#endif
     
     result = copyout((void *)&exitstatus,status,sizeof(int));
     if (result) {
-        return(result);
+        return(result); // the copy to status failed, return EFAULT
     }
     *retval = pid;
     return(0);
@@ -106,20 +165,28 @@ fork_entrypoint(void *childTrapFrame,
     kfree(childTrapFrame);
     mips_usermode(&stackTrapFrame);
     
-    panic("enter_forked_process returned\n");
+    panic("fork_entrypoint returned\n");
 }
 
 int
 sys_fork(struct trapframe *parentTrapFrame,
          pid_t *retval)
 {
-    DEBUG(DB_SYSCALL, "FORKING");
     struct proc *parent = curproc;
-    struct proc *child = proc_create_runprogram("a");
+    struct proc *child = proc_create_runprogram("child");
     if (child == NULL) {
         //TODO: more stuff here, fix error code returned
         return(-1);
     }
+    
+    lock_acquire(child->exitLock);
+    int *childPid = kmalloc(sizeof(pid_t));
+    *childPid = child->pid;
+    int ret = array_add(parent->childrenPids, childPid, NULL);
+    KASSERT(ret == 0);
+    int ret2 = array_add(parent->childrenProcesses, child, NULL);
+    KASSERT(ret2 == 0);
+    lock_release(child->exitLock);
     
     // Copy Parent's trapframe onto heap
     struct trapframe *childTrapFrame = (struct trapframe*)kmalloc(sizeof(struct trapframe));
