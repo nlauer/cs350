@@ -108,19 +108,22 @@ void proc_remthread(struct thread *t);
 
 #if OPT_A2
 /* A child has exited. */
-void proc_child_exited(struct proc *proc, pid_t childPid, int exitcode);
+void proc_child_exited(pid_t childPid, int exitcode);
 
 /* Get the exit code of an exited child process. */
-int proc_has_child_exited(struct proc *proc, pid_t childPid);
+int proc_has_child_exited(pid_t childPid);
 
 /* Get the exit code of an exited child process. */
-int proc_child_exit_code(struct proc *proc, pid_t childPid);
+int proc_child_exit_code(pid_t childPid);
 
 /* Return whether or not childPid is a child process of proc. */
 int proc_is_child(struct proc *proc, pid_t childPid);
 
 /* Return whether or not pid is process of proc. */
-int proc_exists(struct proc *proc, pid_t pid);
+int proc_exists(pid_t pid);
+
+/* Free the PID. */
+void proc_free_pid(pid_t pid);
 #endif // OPT_A2
 
 /* Fetch the address space of the current process. */
