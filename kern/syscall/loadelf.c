@@ -95,6 +95,7 @@ load_segment(struct addrspace *as, struct vnode *v,
     DEBUG(DB_EXEC, "ELF: Loading %lu bytes to 0x%lx\n",
           (unsigned long) filesize, (unsigned long) vaddr);
     
+#if OPT_A3
     (void)is_executable;
     
     vaddr_t vbase1, vtop1, vbase2, vtop2;
@@ -110,7 +111,6 @@ load_segment(struct addrspace *as, struct vnode *v,
     KASSERT((as->as_pbase1 & PAGE_FRAME) == as->as_pbase1);
     KASSERT((as->as_vbase2 & PAGE_FRAME) == as->as_vbase2);
     KASSERT((as->as_pbase2 & PAGE_FRAME) == as->as_pbase2);
-    KASSERT((as->as_stackpbase & PAGE_FRAME) == as->as_stackpbase);
     
     vbase1 = as->as_vbase1;
     vtop1 = vbase1 + as->as_npages1 * PAGE_SIZE;
@@ -129,16 +129,18 @@ load_segment(struct addrspace *as, struct vnode *v,
     iov.iov_kbase = (void *)PADDR_TO_KVADDR(paddr);
     u.uio_segflg = UIO_SYSSPACE;
     u.uio_space = NULL;
-    
-    //	iov.iov_ubase = (userptr_t)vaddr;
+#else
+    iov.iov_ubase = (userptr_t)vaddr;
+    u.uio_segflg = is_executable ? UIO_USERISPACE : UIO_USERSPACE;
+    u.uio_space = as;
+#endif
+
     iov.iov_len = memsize;		 // length of the memory space
     u.uio_iov = &iov;
     u.uio_iovcnt = 1;
     u.uio_resid = filesize;          // amount to read from the file
     u.uio_offset = offset;
-//    u.uio_segflg = is_executable ? UIO_USERISPACE : UIO_USERSPACE;
     u.uio_rw = UIO_READ;
-//    u.uio_space = as;
     
     result = VOP_READ(v, &u);
     if (result) {

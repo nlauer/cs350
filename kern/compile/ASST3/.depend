@@ -302,9 +302,9 @@ proc.o: ../../proc/proc.c ../../include/types.h \
   ../../include/setjmp.h includelinks/kern/machine/setjmp.h opt-A2.h \
   ../../include/synch.h ../../include/current.h \
   includelinks/machine/current.h ../../include/addrspace.h \
-  ../../include/vm.h includelinks/machine/vm.h ../../include/vnode.h \
-  ../../include/vfs.h ../../include/kern/fcntl.h opt-A2.h \
-  ../../include/limits.h ../../include/kern/limits.h
+  ../../include/vm.h includelinks/machine/vm.h opt-A3.h \
+  ../../include/vnode.h ../../include/vfs.h ../../include/kern/fcntl.h \
+  opt-A2.h ../../include/limits.h ../../include/kern/limits.h
 main.o: ../../startup/main.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/kern/errno.h \
@@ -358,8 +358,8 @@ loadelf.o: ../../syscall/loadelf.c ../../include/types.h \
   includelinks/kern/machine/setjmp.h opt-A2.h ../../include/synch.h \
   ../../include/current.h includelinks/machine/current.h \
   ../../include/addrspace.h ../../include/vm.h includelinks/machine/vm.h \
-  ../../include/vnode.h ../../include/elf.h includelinks/machine/elf.h \
-  opt-A3.h
+  opt-A3.h ../../include/vnode.h ../../include/elf.h \
+  includelinks/machine/elf.h opt-A3.h
 proc_syscalls.o: ../../syscall/proc_syscalls.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/kern/errno.h \
@@ -372,7 +372,7 @@ proc_syscalls.o: ../../syscall/proc_syscalls.c ../../include/types.h \
   includelinks/machine/thread.h ../../include/setjmp.h \
   includelinks/kern/machine/setjmp.h ../../include/proc.h \
   ../../include/synch.h ../../include/addrspace.h ../../include/vm.h \
-  includelinks/machine/vm.h ../../include/copyinout.h opt-A2.h \
+  includelinks/machine/vm.h opt-A3.h ../../include/copyinout.h opt-A2.h \
   ../../include/vfs.h ../../include/kern/fcntl.h ../../include/limits.h \
   ../../include/kern/limits.h includelinks/machine/trapframe.h
 runprogram.o: ../../syscall/runprogram.c ../../include/types.h \
@@ -386,8 +386,8 @@ runprogram.o: ../../syscall/runprogram.c ../../include/types.h \
   includelinks/kern/machine/setjmp.h opt-A2.h ../../include/synch.h \
   ../../include/current.h includelinks/machine/current.h \
   ../../include/addrspace.h ../../include/vm.h includelinks/machine/vm.h \
-  ../../include/vfs.h ../../include/syscall.h ../../include/test.h \
-  ../../include/copyinout.h
+  opt-A3.h ../../include/vfs.h ../../include/syscall.h \
+  ../../include/test.h ../../include/copyinout.h
 time_syscalls.o: ../../syscall/time_syscalls.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/clock.h opt-synchprobs.h \
@@ -502,8 +502,8 @@ thread.o: ../../thread/thread.c ../../include/types.h \
   ../../include/threadprivate.h ../../include/proc.h opt-A2.h \
   ../../include/synch.h ../../include/current.h \
   includelinks/machine/current.h ../../include/addrspace.h \
-  ../../include/vm.h ../../include/mainbus.h ../../include/vnode.h \
-  opt-synchprobs.h
+  ../../include/vm.h opt-A3.h ../../include/mainbus.h \
+  ../../include/vnode.h opt-synchprobs.h
 threadlist.o: ../../thread/threadlist.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/lib.h ../../include/cdefs.h \
@@ -660,7 +660,7 @@ dumbvm.o: ../../arch/mips/vm/dumbvm.c ../../include/types.h \
   includelinks/kern/machine/setjmp.h opt-A2.h ../../include/synch.h \
   ../../include/current.h includelinks/machine/current.h \
   includelinks/mips/tlb.h ../../include/addrspace.h ../../include/vm.h \
-  includelinks/machine/vm.h opt-A3.h
+  includelinks/machine/vm.h opt-A3.h opt-A3.h
 ram.o: ../../arch/mips/vm/ram.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/lib.h ../../include/cdefs.h \

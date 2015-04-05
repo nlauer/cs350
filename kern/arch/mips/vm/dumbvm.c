@@ -92,6 +92,8 @@ free_kpages(vaddr_t addr)
     /* nothing - leak the memory. */
     
     (void)addr;
+    
+    // free the memory, and mark it as free
 }
 
 void
@@ -117,7 +119,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     struct addrspace *as;
     int spl;
 #if OPT_A3
-    bool textSegment = false;
+    bool dirtiable = true;
 #endif
     
     faultaddress &= PAGE_FRAME;
@@ -182,11 +184,14 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     
     if (faultaddress >= vbase1 && faultaddress < vtop1) {
 #if OPT_A3
-        textSegment = true;
+        dirtiable = as->as_writeable1;
 #endif
         paddr = (faultaddress - vbase1) + as->as_pbase1;
     }
     else if (faultaddress >= vbase2 && faultaddress < vtop2) {
+#if OPT_A3
+        dirtiable = as->as_writeable2;
+#endif
         paddr = (faultaddress - vbase2) + as->as_pbase2;
     }
     else if (faultaddress >= stackbase && faultaddress < stacktop) {
@@ -209,8 +214,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         }
         ehi = faultaddress;
 #if OPT_A3
-        if (textSegment == true) {
-            elo = paddr | TLBLO_VALID;
+        if (dirtiable == false) {
+            elo = (paddr | TLBLO_VALID) & (~TLBLO_DIRTY);
         } else {
             elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
         }
@@ -225,7 +230,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     
 #if OPT_A3
     ehi = faultaddress;
-    if (textSegment == true) {
+    if (dirtiable == false) {
         elo = (paddr | TLBLO_VALID) & (~TLBLO_DIRTY);
     } else {
         elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
@@ -318,12 +323,14 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
     if (as->as_vbase1 == 0) {
         as->as_vbase1 = vaddr;
         as->as_npages1 = npages;
+        as->as_writeable1 = writeable;
         return 0;
     }
     
     if (as->as_vbase2 == 0) {
         as->as_vbase2 = vaddr;
         as->as_npages2 = npages;
+        as->as_writeable2 = writeable;
         return 0;
     }
     
