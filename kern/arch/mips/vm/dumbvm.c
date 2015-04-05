@@ -37,6 +37,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <coremap.h>
 #include "opt-A3.h"
 
 /*
@@ -52,18 +53,26 @@
 /*
  * Wrap rma_stealmem in a spinlock.
  */
+#if OPT_A3
+#else
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+#endif
 
 void
 vm_bootstrap(void)
 {
-    /* Do nothing. */
+#if OPT_A3
+    cm_bootstrap();
+#endif
 }
 
 static
 paddr_t
 getppages(unsigned long npages)
 {
+#if OPT_A3
+    return cm_getppages(npages);;
+#else
     paddr_t addr;
     
     spinlock_acquire(&stealmem_lock);
@@ -72,28 +81,31 @@ getppages(unsigned long npages)
     
     spinlock_release(&stealmem_lock);
     return addr;
+#endif
 }
 
 /* Allocate/free some kernel-space virtual pages */
 vaddr_t
 alloc_kpages(int npages)
 {
+#if OPT_A3
+    return cm_alloc_kpages(npages);
+#else
     paddr_t pa;
     pa = getppages(npages);
     if (pa==0) {
         return 0;
     }
     return PADDR_TO_KVADDR(pa);
+#endif
 }
 
 void
 free_kpages(vaddr_t addr)
 {
-    /* nothing - leak the memory. */
-    
-    (void)addr;
-    
-    // free the memory, and mark it as free
+#if OPT_A3
+    cm_free_kpages(addr);
+#endif
 }
 
 void
