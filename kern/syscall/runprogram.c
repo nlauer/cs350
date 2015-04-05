@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include "copyinout.h"
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -51,9 +52,15 @@
  *
  * Calls vfs_open on progname and thus may destroy it.
  */
+#if OPT_A2
+int
+runprogram(char *progname, char **args)
+{
+#else
 int
 runprogram(char *progname)
 {
+#endif
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
@@ -96,10 +103,58 @@ runprogram(char *progname)
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
+    
+#ifdef OPT_A2
+    /* Put all args onto user stack */
+    int i = 0;
+    while (args[i] != NULL && (*args[i]) != '\0') {
+        int length = strlen(args[i]) + 1; // get the length of the arg
+        stackptr -= length; // move the stack ptr down the length of the arg we are going to add to it
+        
+        // copy the divisible by 4 arg onto the user stack
+        result = copyout((const void *)args[i], (userptr_t)stackptr, (size_t)length);
+        if (result) {
+            return result;
+        }
 
+        args[i] = (char *)stackptr; // save the user space address for the kernel arg
+        i++;
+    }
+    
+    // to start our argv array, move down until we are at a divisible by 4 address
+    int divisibleBy4 = stackptr % 4;
+    if (divisibleBy4 != 0) {
+        stackptr -= divisibleBy4;
+    }
+    
+    // put argv onto the user stack
+    stackptr -= sizeof(char*); // put the null terminator for argv
+    for (int j = (i - 1); j >= 0; j--) {
+        stackptr = stackptr - sizeof(char*); // move the stack ptr down 4 spots for the addr to go in
+        result = copyout((const void *) (args + j), (userptr_t) stackptr, (sizeof(char *)));
+        if (result) {
+            return result;
+        }
+    }
+    
+    vaddr_t argvstart = stackptr;
+    
+    // Make sure the stack starts at an address divisible by 8
+    int divisibleBy8 = stackptr % 8;
+    if (divisibleBy8 != 0) {
+        stackptr -= divisibleBy8;
+    }
+    
+    /* Warp to user mode. */
+    enter_new_process(i /*argc*/,
+                      (userptr_t)argvstart /*userspace addr of argv*/,
+                      stackptr,
+                      entrypoint);
+#else
 	/* Warp to user mode. */
 	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
 			  stackptr, entrypoint);
+#endif
 	
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");

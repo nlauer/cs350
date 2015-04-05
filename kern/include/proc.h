@@ -76,6 +76,7 @@ struct proc {
     
 #if OPT_A2
     pid_t pid;
+    int hasParentExited;
     struct array *childrenPids; /* PIDs of the children */
     struct array *childrenProcesses; /* Children Processes */
     struct lock *exitLock;

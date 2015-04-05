@@ -10,6 +10,10 @@
 #include <addrspace.h>
 #include <copyinout.h>
 #include "opt-A2.h"
+#include <vfs.h>
+#include <kern/fcntl.h>
+#include "copyinout.h"
+#include "limits.h"
 #include <machine/trapframe.h>
 
 void sys__exit(int exitcode) {
@@ -19,7 +23,36 @@ void sys__exit(int exitcode) {
     DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
     
 #if OPT_A2
+    spinlock_acquire(&curproc->p_lock);
+    for (unsigned i = 0; i < array_num(p->childrenPids); i++) {
+        int *pid = array_get(p->childrenPids, i);
+        if (proc_has_child_exited(*pid)) {
+            // The child has already exited, and now its parent is exiting. Free that child's pid
+            spinlock_release(&curproc->p_lock);
+            proc_free_pid(*pid);
+            spinlock_acquire(&curproc->p_lock);
+        } else {
+            // Tell the child that it's parent has exited, so it knows it can free its pid when it exits
+            struct proc *childProc = NULL;
+            for (unsigned i = 0; i < array_num(p->childrenProcesses); i++) {
+                struct proc *child = array_get(p->childrenProcesses, i);
+                if (child->pid == *pid) {
+                    childProc = child;
+                    break;
+                }
+            }
+            
+            if (childProc != NULL) {
+                childProc->hasParentExited = 1;
+            }
+        }
+    }
+    spinlock_release(&curproc->p_lock);
+    
     proc_child_exited(p->pid, exitcode); // Mark this process as having exited, and save its exit code
+    if (p->hasParentExited == 1) {
+        proc_free_pid(p->pid);
+    }
     lock_acquire(p->exitLock);
     cv_broadcast(p->exitCv, p->exitLock); // Wake any procs that called waitpid for the exiting pid
     lock_release(p->exitLock);
@@ -201,6 +234,141 @@ int sys_fork(struct trapframe *parentTrapFrame, pid_t *retval)
     
     *retval = child->pid;
     return(0);
+}
+
+int sys_execv(const char *program, char **args)
+{
+    if (program == NULL || args == NULL) {
+        return EFAULT; // one of the args was an invalid pointer
+    }
+    
+    struct addrspace *as;
+    struct vnode *v;
+    vaddr_t entrypoint, stackptr;
+    int result;
+    
+    // Move the args from the calling stack to the kernel
+    char **kernelargs = (char **)kmalloc(sizeof(char**));
+    result = copyin((const_userptr_t)args, kernelargs, sizeof(char**));
+    if (result) {
+        kfree(kernelargs);
+        return result;
+    }
+    int i = 0;
+    size_t size;
+    size_t totalSize = 0;
+    while (args[i] != NULL) {
+        kernelargs[i] = (char *)kmalloc(sizeof(char *) * PATH_MAX);
+        result = copyinstr((const_userptr_t)args[i], kernelargs[i], PATH_MAX, &size);
+        if (result) {
+            kfree(kernelargs);
+            return result;
+        }
+        totalSize += size;
+        i++;
+    }
+    kernelargs[i] = NULL;
+    if (totalSize > ARG_MAX) {
+        kfree(kernelargs);
+        return E2BIG;
+    }
+    
+    /* open the program */
+    char *program_temp;
+    program_temp = kstrdup(program);
+    result = vfs_open(program_temp, O_RDONLY, 0, &v);
+    kfree(program_temp);
+    if (result) {
+        kfree(kernelargs);
+        return result;
+    }
+    
+    /* Create a new address space. */
+    as = as_create();
+    if (as == NULL) {
+        kfree(kernelargs);
+        vfs_close(v);
+        return ENOMEM;
+    }
+    
+    /* Switch to it and activate it. */
+    struct addrspace *old_addrspace = curproc_setas(as);
+    as_destroy(old_addrspace);
+    as_activate();
+    
+    /* Load the executable. */
+    result = load_elf(v, &entrypoint);
+    if (result) {
+        /* p_addrspace will go away when curproc is destroyed */
+        kfree(kernelargs);
+        vfs_close(v);
+        return result;
+    }
+    
+    /* Done with the file now. */
+    vfs_close(v);
+    
+    /* Define the user stack in the address space */
+    result = as_define_stack(as, &stackptr);
+    if (result) {
+        /* p_addrspace will go away when curproc is destroyed */
+        kfree(kernelargs);
+        return result;
+    }
+    
+    /* Put all args onto user stack */
+    i = 0;
+    while (kernelargs[i] != NULL) {
+        int length = strlen(kernelargs[i]) + 1; // get the length of the arg
+        stackptr -= length; // move the stack ptr down the length of the arg we are going to add to it
+        
+        // copy the arg onto the user stack
+        result = copyout((const void *)kernelargs[i], (userptr_t)stackptr, (size_t)length);
+        if (result) {
+            kfree(kernelargs);
+            return result;
+        }
+        
+        kernelargs[i] = (char *)stackptr; // save the user space address for the kernel arg
+        i++;
+    }
+    
+    // to start our argv array, move down until we are at a divisible by 4 address
+    int divisibleBy4 = stackptr % 4;
+    if (divisibleBy4 != 0) {
+        stackptr -= divisibleBy4;
+    }
+
+    // put argv onto the user stack
+    stackptr -= sizeof(char*); // add null terminator for argv
+    for (int j = (i - 1); j >= 0; j--) {
+        stackptr = stackptr - sizeof(char*); // move the stack ptr down 4 spots for the addr to go in
+        result = copyout((const void *) (kernelargs + j), (userptr_t) stackptr, (sizeof(char *)));
+        if (result) {
+            kfree(kernelargs);
+            return result;
+        }
+    }
+    
+    kfree(kernelargs);
+    
+    vaddr_t argvstart = stackptr;
+    
+    // Make sure the stack starts at an address divisible by 8
+    int divisibleBy8 = stackptr % 8;
+    if (divisibleBy8 != 0) {
+        stackptr -= divisibleBy8;
+    }
+    
+    /* Warp to user mode. */
+    enter_new_process(i /*argc*/,
+                      (userptr_t)argvstart /*userspace addr of argv*/,
+                      stackptr,
+                      entrypoint);
+    
+    /* enter_new_process does not return. */
+    panic("enter_new_process returned\n");
+    return EINVAL;
 }
 #endif
 

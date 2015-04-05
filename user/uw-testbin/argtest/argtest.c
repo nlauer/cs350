@@ -11,8 +11,8 @@
 int
 main(int argc, char *argv[])
 {
-	const char *tmp;
 	int i;
+	const char *tmp;
 
 	printf("argc   : %d\n", argc);
 	printf("&tmp   : %p\n", &tmp);

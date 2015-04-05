@@ -117,6 +117,7 @@ proc_create(const char *name)
     proc->childrenProcesses = array_create();
     proc->exitLock = lock_create(name);
     proc->exitCv = cv_create(name);
+    proc->hasParentExited = 0;
 #endif
 
 	return proc;
