@@ -136,8 +136,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     
     faultaddress &= PAGE_FRAME;
     
-    DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
-    
     switch (faulttype) {
         case VM_FAULT_READONLY:
 #if OPT_A3
@@ -234,7 +232,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 #else
         elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
 #endif
-        DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
         tlb_write(ehi, elo, i);
         splx(spl);
         return 0;
@@ -279,6 +276,9 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+    cm_free_kpages(as->as_pbase1 + MIPS_KSEG0);
+    cm_free_kpages(as->as_pbase2 + MIPS_KSEG0);
+    cm_free_kpages(as->as_stackpbase + MIPS_KSEG0);
     kfree(as);
 }
 
@@ -367,11 +367,13 @@ as_prepare_load(struct addrspace *as)
     KASSERT(as->as_pbase2 == 0);
     KASSERT(as->as_stackpbase == 0);
     
+    DEBUG(DB_VM, "npages1:%u\n", as->as_npages1);
     as->as_pbase1 = getppages(as->as_npages1);
     if (as->as_pbase1 == 0) {
         return ENOMEM;
     }
-    
+
+    DEBUG(DB_VM, "npages2:%u\n", as->as_npages2);
     as->as_pbase2 = getppages(as->as_npages2);
     if (as->as_pbase2 == 0) {
         return ENOMEM;

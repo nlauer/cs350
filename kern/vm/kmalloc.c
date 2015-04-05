@@ -628,6 +628,7 @@ kfree(void *ptr)
 		return;
 	} else if (subpage_kfree(ptr)) {
 		KASSERT((vaddr_t)ptr%PAGE_SIZE==0);
+        DEBUG(DB_VM, "KFREE CALLED");
 		free_kpages((vaddr_t)ptr);
 	}
 }

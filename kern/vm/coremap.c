@@ -15,11 +15,13 @@
 struct coremap_entry {
     paddr_t paddr;
     paddr_t kvaddr;
+    uint32_t segmentLength;
     bool isUsed;
 };
 
 static struct coremap_entry *coremap;
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+static struct spinlock coremap_lock = SPINLOCK_INITIALIZER;
 static bool vm_initialized = false;
 static uint32_t first_coremap_page = -1;
 static uint32_t last_coremap_page = -1;
@@ -33,6 +35,7 @@ static void cm_initialize_coremap()
         coremap[i].isUsed = false;
         coremap[i].paddr = first_coremap_page*PAGE_SIZE + i*PAGE_SIZE;
         coremap[i].kvaddr = PADDR_TO_KVADDR(coremap[i].paddr);
+        coremap[i].segmentLength = 0;
     }
 }
 
@@ -80,16 +83,22 @@ paddr_t cm_getppages(unsigned long npages)
     
     if (vm_initialized) {
         // Need to find npages free pages in the coremap. Search from the front for a block of the right length
-        uint32_t start = -1;
+        spinlock_acquire(&coremap_lock);
+        DEBUG(DB_VM, "Asked for npages: %lu\n", npages);
+        bool startSet = false;
+        uint32_t start = 0;
         uint32_t found = 0;
         uint32_t numcoremap = last_coremap_page - first_coremap_page;
-        DEBUG(DB_VM, "Num Core Map: %u\n", numcoremap);
         for (uint32_t i = 0; i < numcoremap; i++) {
             if (coremap[i].isUsed == true) {
-                start = -1;
+                start = 0;
                 found = 0;
+                startSet = false;
             } else {
-                start = i;
+                if (startSet == false) {
+                    start = i;
+                    startSet = true;
+                }
                 found++;
                 
                 // We found a block that is long enough to give, so return the starting paddr
@@ -98,14 +107,20 @@ paddr_t cm_getppages(unsigned long npages)
                     // We are giving these pages back, so we should make them as used
                     for (uint32_t k = start; k < start + npages; k++) {
                         coremap[k].isUsed = true;
+                        coremap[k].segmentLength = npages - (k - start);
                     }
                     DEBUG(DB_VM, "Returning paddr for npages: 0x%x\n", coremap[start].paddr);
+                    spinlock_release(&coremap_lock);
                     return coremap[start].paddr;
                 }
             }
         }
         
-        panic("There aren't any free pages");
+        for (uint32_t i = 0; i < numcoremap; i++) {
+            DEBUG(DB_VM, "Page State: %u: %u\n", i, coremap[i].isUsed);
+        }
+        spinlock_release(&coremap_lock);
+        panic("There aren't any free pages\n");
     } else {
         spinlock_acquire(&stealmem_lock);
         addr = ram_stealmem(npages);
@@ -128,5 +143,22 @@ vaddr_t cm_alloc_kpages(int npages)
 
 void cm_free_kpages(vaddr_t addr)
 {
-    (void)addr;
+    if (vm_initialized) {
+        spinlock_acquire(&coremap_lock);
+        paddr_t paddr = addr - MIPS_KSEG0;
+        DEBUG(DB_VM, "Asked to free VADDR: 0x%x, PADDR: 0x%x\n", addr, paddr);
+        
+        uint32_t coremapIndex = paddr / PAGE_SIZE - first_coremap_page;
+        
+        uint32_t segmentLength = coremap[coremapIndex].segmentLength;
+        DEBUG(DB_VM, "Freeing segment at index: %u length: %u\n", coremapIndex, segmentLength);
+        
+        for (uint32_t i = coremapIndex; i < coremapIndex + segmentLength; i++) {
+            DEBUG(DB_VM, "Freeing segment at index: %u\n", i);
+            coremap[i].segmentLength = 0;
+            coremap[i].isUsed = false;
+        }
+        
+        spinlock_release(&coremap_lock);
+    }
 }

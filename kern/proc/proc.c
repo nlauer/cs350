@@ -155,6 +155,7 @@ proc_destroy(struct proc *proc)
     
 #if OPT_A2
     for (unsigned i = array_num(proc->childrenPids); i > 0; i--) {
+        kfree(array_get(proc->childrenPids, i - 1));
         array_remove(proc->childrenPids, i - 1);
         array_remove(proc->childrenProcesses, i - 1);
     }
